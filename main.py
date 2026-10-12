@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -6,13 +7,17 @@ from mcp.server.mcpserver import MCPServer
 mcp = MCPServer(
     "du-mcp",
     instructions=(
-        "Disk space analysis via du. Call `du` repeatedly, starting shallow on a "
-        "high-level path and then drilling into the largest entries."
+        "Disk space analysis. Call `df` to see which filesystem is full, then call "
+        "`du` repeatedly, starting shallow on a high-level path and then drilling "
+        "into the largest entries."
     ),
 )
 
 MAX_ENTRIES = 200
 TIMEOUT_S = 60
+
+# source fstype size used avail pcent target — source and target may contain spaces.
+DF_LINE = re.compile(r"^(.*?)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(/.*)$")
 
 
 @mcp.tool()
@@ -56,6 +61,43 @@ def du(path: str = "/", depth: int = 1) -> dict:
         "errors": errors[:10],
         "error_count": len(errors),
     }
+
+
+@mcp.tool()
+def df(path: str | None = None) -> dict:
+    """Filesystem free space, like `df`: size, used and available bytes per mount.
+
+    With no `path`, lists all mounted filesystems. With a `path`, reports only the
+    filesystem containing it. Use this to see which filesystem is full, then use `du`
+    to find out what is using the space.
+    """
+    cmd = ["df", "-B1", "--output=source,fstype,size,used,avail,pcent,target"]
+    if path is not None:
+        target = Path(path).expanduser().resolve()
+        if not target.exists():
+            raise ValueError(f"no such path: {target}")
+        cmd += ["--", str(target)]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"df timed out after {TIMEOUT_S}s (a network mount may be hung)")
+
+    filesystems = []
+    for line in proc.stdout.splitlines()[1:]:  # skip header
+        m = DF_LINE.match(line)
+        if m:
+            source, fstype, size, used, avail, pcent, mount = m.groups()
+            filesystems.append({
+                "source": source,
+                "fstype": fstype,
+                "mount": mount,
+                "size": int(size),
+                "used": int(used),
+                "available": int(avail),
+                "percent_used": pcent,
+            })
+    return {"filesystems": filesystems, "errors": proc.stderr.splitlines()[:10]}
 
 
 def main():
