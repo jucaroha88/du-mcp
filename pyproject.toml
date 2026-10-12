@@ -1,7 +1,7 @@
 [project]
 name = "du-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server that lets an agent analyze disk space with df and du"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

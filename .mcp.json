@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "du-mcp": {
+      "command": "uv",
+      "args": ["run", "main.py"]
+    }
+  }
+}
